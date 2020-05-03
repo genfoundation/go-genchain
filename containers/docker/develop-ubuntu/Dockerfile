@@ -1,0 +1,17 @@
+FROM ubuntu:xenial
+
+ENV PATH=/usr/lib/go-1.9/bin:$PATH
+
+RUN \
+  apt-get update && apt-get upgrade -q -y && \
+  apt-get install -y --no-install-recommends golang-1.9 git make gcc libc-dev ca-certificates && \
+  git clone --depth 1 https://github.com/genchain/go-genchain && \
+  (cd go-genchain && make ggen) && \
+  cp go-genchain/build/bin/ggen /ggen && \
+  apt-get remove -y golang-1.9 git make gcc libc-dev && apt autoremove -y && apt-get clean && \
+  rm -rf /go-genchain
+
+EXPOSE 17090
+EXPOSE 60606
+
+ENTRYPOINT ["/ggen"]

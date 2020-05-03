@@ -1,0 +1,26 @@
+{
+    "sealEngine": "Ethash",
+    "config": {
+      "chainId": 12345,
+      "homesteadBlock": 0,
+      "eip155Block": 0,
+      "eip158Block": 0
+    },
+    "alloc": {
+      "0x07f8d023cd4682389e0a209722e7aca4d43d1bbf":{
+        "balance": "0"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x200",
+    "extraData": "",
+    "gasLimit": "0x2fefd8",
+    "nonce": "0x0000000000000042",
+    "mixhash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "timestamp": "0x00",
+    "rewards": "0x8f0d180",
+    "n": "0x6",
+    "p": "0x4",
+    "alpha": "0x00001"
+  }
