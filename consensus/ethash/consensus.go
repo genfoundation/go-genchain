@@ -355,23 +355,22 @@ func calcnp(timespan uint64, n uint64, p uint64) (uint64, uint64) {
 	}
 	return n, p
 }
-
-func (ethash *Ethash) CalcDifficultyBygen(header *types.Header, parent *types.Header, parent12 *types.Header) (uint64, uint64, *big.Int, *big.Int) {
+func (ethash *Ethash) CalcDifficultyByLake(header *types.Header, parent *types.Header, parent12 *types.Header) (uint64, uint64, *big.Int, *big.Int) {
 	var n, p uint64
 	var timespan uint64 = 120
 	Alpha := new(big.Int)
 	Alpha.SetUint64(timespan)
 	NP := new(big.Int)
 
-	curBlockNumber := header.Number.Uint64()
-	curBlockTime := header.Time.Uint64()
+	curBlockNumber := header.Number.Uint64() //得到当前区块号
+	curBlockTime := header.Time.Uint64()     //得到当前区块的时间
 
-	curNP := new(big.Int)
+	curNP := new(big.Int) //当前块总难度
 
 	if curBlockNumber < 1 {
 		NP.SetUint64(0)
 	} else {
-		NP.Set(parent.NP)
+		NP.Set(parent.NP) //Get the total difficulty of the parent block
 	}
 
 	if curBlockNumber <= 12 {
@@ -380,19 +379,30 @@ func (ethash *Ethash) CalcDifficultyBygen(header *types.Header, parent *types.He
 		return params.N, params.P, Alpha, NP
 	}
 
-	parent12BlockTime := parent12.Time.Uint64()
-	timespan = curBlockTime - parent12BlockTime
+	parent12BlockTime := parent12.Time.Uint64() //Get the time of the first 12 blocks
+	timespan = curBlockTime - parent12BlockTime //Time difference from the previous 12 blocks
 
 	if curBlockTime < parent12BlockTime {
 		timespan = 120
 	}
 	Alpha.SetUint64(timespan)
 
+	//If the P value can be adjusted
 	n, p = calcnp(timespan, parent.N, parent.P)
-	curNP.SetUint64(n * n * n * p * p * p * p * p * p)
-	NP.Add(NP, curNP)
+	curNP.SetUint64(n * n * n * p * p * p * p * p * p) //The difficulty of the current block
+	NP.Add(NP, curNP)                                  //Plus the np of the current block,
 
 	return n, p, Alpha, NP
+}
+func (ethash *Ethash) CalcDifficultyBygen(header *types.Header, parent *types.Header, parent12 *types.Header) (uint64, uint64, *big.Int, *big.Int) {
+
+	var n, p uint64
+	np := new(big.Int)    //totaldifficulty
+	alpha := new(big.Int) //timespan
+	n, p, alpha, np = ethash.CalcDifficultyByLake(header, parent, parent12)
+	fmt.Print(" prepare blockNUmer: ", header.Number, "n: ", n, "p: ", p, "alpha: ", alpha, "np: ", np)
+
+	return n, p, alpha, np
 }
 
 func (ethash *Ethash) VerifyDifficultyBygen(header *types.Header) (uint64, uint64) {
@@ -400,6 +410,114 @@ func (ethash *Ethash) VerifyDifficultyBygen(header *types.Header) (uint64, uint6
 	var timespan uint64
 	timespan = header.Alpha.Uint64()
 	n, p := calcnp(timespan, header.NN, header.PP)
+	return n, p
+
+}
+
+//Change the difficulty adjustment algorithm to sea
+func (ethash *Ethash) CalcDifficultyBySea(header *types.Header, parent *types.Header) (uint64, uint64, *big.Int, *big.Int) {
+
+	curBlockNumber := header.Number.Uint64()
+	curBlockTime := header.Time.Uint64()
+
+	//Calculate the duration of two blocks
+	var timespan uint64 = 10 //default timespan between block
+	parentBlockTime := parent.Time.Uint64()
+	if curBlockNumber == 1 { //The length of the first block is 10
+		timespan = 10
+	} else {
+		timespan = curBlockTime - parentBlockTime
+	}
+
+	if curBlockTime < parentBlockTime {
+		timespan = 10
+	}
+	Alpha := new(big.Int) //timespan
+	Alpha.SetUint64(timespan)
+
+	//Calculate n, p
+	var n, p uint64
+	n, p = calcnpsea(timespan, parent.N, parent.P)
+
+	//Calculate the difficulty of the current block
+	curNP := new(big.Int) //Total difficulty of the current block
+	curNP.SetUint64(n*n*n*p*p*p*p*p*p - timespan)
+	//Calculate the total difficulty
+	NP := new(big.Int) //Total difficulty
+	if curBlockNumber < 1 {
+		NP.SetUint64(0)
+	} else {
+		NP.Set(parent.NP)
+	}
+
+	NP.Add(NP, curNP)
+
+	return n, p, Alpha, NP
+}
+func calcnpsea(timespan uint64, n uint64, p uint64) (uint64, uint64) {
+	if p < 256 {
+		if timespan < 5 {
+			p = p + 1
+		} else if timespan < 7 {
+			n = n + 1
+		} else if timespan > 900 {
+			if p > params.P && n > params.N {
+				p = p - p/7
+				n = n - n/7
+			}
+		} else if timespan > 600 {
+			if p > params.P && n > params.N {
+				p = p - p/10
+				n = n - n/10
+			}
+		} else if timespan > 16 {
+			if p > params.P {
+				p = p - 1
+			}
+		} else if timespan > 13 {
+			if n > params.N {
+				n = n - 1
+			}
+		}
+
+		if p <= params.P && n > params.N && timespan > 30 {
+			n = n - 1
+		}
+	} else {
+		if timespan < 5 {
+			n = n + 1
+		} else if timespan > 16 {
+			if n > params.N {
+				n = n - 1
+			}
+		}
+
+		if n <= params.N && p > params.P && timespan > 30 {
+			p = p - 1
+		}
+	}
+
+	if n <= params.N {
+		n = params.N
+	}
+
+	if p <= params.P {
+		p = params.P
+	}
+
+	if p > 256 {
+		p = 256
+	}
+	return n, p
+}
+func (ethash *Ethash) VerifyDifficultyBySea(header *types.Header) (uint64, uint64) {
+
+	var timespan uint64
+	timespan = header.Alpha.Uint64()
+	var n, p uint64
+	n, p = calcnpsea(timespan, header.NN, header.PP)
+	fmt.Println("verfiy Diffculty  BlockNumer Fork:", header.Number, "calcnpsea  ")
+
 	return n, p
 
 }
@@ -570,29 +688,42 @@ func (ethash *Ethash) VerifySeal(chain consensus.ChainReader, header *types.Head
 	}
 	// If we're running a shared PoW, delegate verification to it
 	if ethash.shared != nil {
+		//fmt.Println("GPU consensus.go VerifySeal() share pow ")
 		return ethash.shared.VerifySeal(chain, header)
 	}
 	// Ensure that we have a valid difficulty for the block
 	if header.Difficulty.Sign() <= 0 {
 		return errInvalidDifficulty
 	}
-
+	//verify fhash,hash256 is Ok
 	hash := header.HashNoNonce().Bytes()
 	nonce := header.Nonce.Uint64()
+
 	fhash, _, hash256 := genHash(hash, nonce, hash, header.P, header.N)
 	fhashstring := common.BytesToHash(fhash).String()
 
+	//verify fash
 	if header.FuzzyHash.String() != fhashstring {
 		return errInvalidMixDigest
 	}
+	//verify hash nonce
 
 	P := int(header.P)
 	if !compareDiff(hash256, P) {
 		return errInvalidMixDigest
 	}
-	n, p := ethash.VerifyDifficultyBygen(header)
+	//verify n,p is ok
+	var n, p uint64
+
+	next := new(big.Int).Set(header.Number)
+	if chain.Config().IsSeafork(next) {
+		n, p = ethash.VerifyDifficultyBySea(header)
+	} else {
+		n, p = ethash.VerifyDifficultyBygen(header)
+	}
 
 	if header.N != n || header.P != p {
+
 		return errInvalidPoW
 	}
 	return nil
@@ -605,8 +736,8 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
-
-	if parent.Time.Cmp(header.Time) >= 0 {
+	//gen begin   Counting from four blocks to 12 blocks
+	if parent.Time.Cmp(header.Time) >= 0 { //No calculation
 		return consensus.ErrUnknownAncestor
 	}
 	var parent12 *types.Header
@@ -615,15 +746,27 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 		parent12 = chain.GetHeaderByNumber(header.Number.Uint64() - 12)
 
 	}
+	var (
+		n     uint64
+		p     uint64
+		alpha *big.Int
+		np    *big.Int
+	)
 
-	n, p, alpha, np := ethash.CalcDifficultyBygen(header, parent, parent12)
+	next := new(big.Int).Add(parent.Number, big1)
+	if chain.Config().IsSeafork(next) {
+		n, p, alpha, np = ethash.CalcDifficultyBySea(header, parent)
+	} else {
+		n, p, alpha, np = ethash.CalcDifficultyBygen(header, parent, parent12)
+	}
 
 	header.N = n
 	header.NN = parent.N
 	header.P = p
 	header.PP = parent.P
-	header.Alpha.Set(alpha)
-	header.NP.Set(np)
+	header.Alpha.Set(alpha) //timespan
+	header.NP.Set(np)       //totalDiffcult
+	//gen end
 
 	header.Difficulty = ethash.CalcDifficulty(chain, header.Time.Uint64(), parent)
 

@@ -1,4 +1,4 @@
-// Copyright 2018The go-genchain Authors
+// Copyright 2016 The go-genchain Authors
 // This file is part of the go-genchain library.
 //
 // The go-genchain library is free software: you can redistribute it and/or modify
@@ -32,6 +32,7 @@ var (
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
 		ChainId:             big.NewInt(1),
+		SeaBlock:            big.NewInt(131600),
 		HomesteadBlock:      big.NewInt(1150000),
 		DAOForkBlock:        big.NewInt(1920000),
 		DAOForkSupport:      true,
@@ -82,16 +83,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Genchain core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int))
 )
 
@@ -102,6 +103,8 @@ var (
 // set of configuration options.
 type ChainConfig struct {
 	ChainId *big.Int `json:"chainId"` // Chain id identifies the current chain and is used for replay protection
+
+	SeaBlock *big.Int `json:"seaBlock,omitempty"`
 
 	HomesteadBlock *big.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
 
@@ -153,8 +156,9 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Seafork %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Engine: %v}",
 		c.ChainId,
+		c.SeaBlock,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
 		c.DAOForkSupport,
@@ -170,6 +174,10 @@ func (c *ChainConfig) String() string {
 // IsHomestead returns whether num is either equal to the homestead block or greater.
 func (c *ChainConfig) IsHomestead(num *big.Int) bool {
 	return isForked(c.HomesteadBlock, num)
+}
+
+func (c *ChainConfig) IsSeafork(num *big.Int) bool {
+	return isForked(c.SeaBlock, num)
 }
 
 // IsDAO returns whether num is either equal to the DAO fork block or greater.
@@ -235,6 +243,9 @@ func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *Confi
 func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *ConfigCompatError {
 	if isForkIncompatible(c.HomesteadBlock, newcfg.HomesteadBlock, head) {
 		return newCompatError("Homestead fork block", c.HomesteadBlock, newcfg.HomesteadBlock)
+	}
+	if isForkIncompatible(c.SeaBlock, newcfg.SeaBlock, head) {
+		return newCompatError("Sea fork block", c.SeaBlock, newcfg.SeaBlock)
 	}
 	if isForkIncompatible(c.DAOForkBlock, newcfg.DAOForkBlock, head) {
 		return newCompatError("DAO fork block", c.DAOForkBlock, newcfg.DAOForkBlock)
@@ -325,6 +336,7 @@ func (err *ConfigCompatError) Error() string {
 // phases.
 type Rules struct {
 	ChainId                                   *big.Int
+	IsSeafork                                 bool
 	IsHomestead, IsEIP150, IsEIP155, IsEIP158 bool
 	IsByzantium                               bool
 }
@@ -334,5 +346,5 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 	if chainId == nil {
 		chainId = new(big.Int)
 	}
-	return Rules{ChainId: new(big.Int).Set(chainId), IsHomestead: c.IsHomestead(num), IsEIP150: c.IsEIP150(num), IsEIP155: c.IsEIP155(num), IsEIP158: c.IsEIP158(num), IsByzantium: c.IsByzantium(num)}
+	return Rules{ChainId: new(big.Int).Set(chainId), IsSeafork: c.IsSeafork(num), IsHomestead: c.IsHomestead(num), IsEIP150: c.IsEIP150(num), IsEIP155: c.IsEIP155(num), IsEIP158: c.IsEIP158(num), IsByzantium: c.IsByzantium(num)}
 }

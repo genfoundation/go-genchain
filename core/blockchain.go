@@ -1,4 +1,4 @@
-// Copyright 2018  The go-genchain Authors
+// Copyright 2014 The go-genchain Authors
 // This file is part of the go-genchain library.
 //
 // The go-genchain library is free software: you can redistribute it and/or modify
@@ -919,6 +919,15 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 		if current := block.NumberU64(); current > triesInMemory {
 			// Find the next state trie we need to commit
 			header := bc.GetHeaderByNumber(current - triesInMemory)
+			if header == nil {
+				log.Error("header", "nil")
+				return NonStatTy, err
+			}
+			//log.Info("header.number", "number", header.Number, "current", current, "memory", triesInMemory)
+			if header.Number == nil {
+				return NonStatTy, err
+			}
+
 			chosen := header.Number.Uint64()
 
 			// Only write to disk if we exceeded our memory allowance *and* also have at
