@@ -400,7 +400,6 @@ func (ethash *Ethash) CalcDifficultyBygen(header *types.Header, parent *types.He
 	np := new(big.Int)    //totaldifficulty
 	alpha := new(big.Int) //timespan
 	n, p, alpha, np = ethash.CalcDifficultyByLake(header, parent, parent12)
-	fmt.Print(" prepare blockNUmer: ", header.Number, "n: ", n, "p: ", p, "alpha: ", alpha, "np: ", np)
 
 	return n, p, alpha, np
 }
@@ -516,7 +515,8 @@ func (ethash *Ethash) VerifyDifficultyBySea(header *types.Header) (uint64, uint6
 	timespan = header.Alpha.Uint64()
 	var n, p uint64
 	n, p = calcnpsea(timespan, header.NN, header.PP)
-	fmt.Println("verfiy Diffculty  BlockNumer Fork:", header.Number, "calcnpsea  ")
+	//swpu
+	//fmt.Println("verfiy Diffculty  BlockNumer Fork:", header.Number, "calcnpsea  ")
 
 	return n, p
 
@@ -740,12 +740,7 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 	if parent.Time.Cmp(header.Time) >= 0 { //No calculation
 		return consensus.ErrUnknownAncestor
 	}
-	var parent12 *types.Header
 
-	if header.Number.Uint64() >= 13 {
-		parent12 = chain.GetHeaderByNumber(header.Number.Uint64() - 12)
-
-	}
 	var (
 		n     uint64
 		p     uint64
@@ -757,6 +752,10 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 	if chain.Config().IsSeafork(next) {
 		n, p, alpha, np = ethash.CalcDifficultyBySea(header, parent)
 	} else {
+		var parent12 *types.Header
+		if header.Number.Uint64() >= 13 {
+			parent12 = chain.GetHeaderByNumber(header.Number.Uint64() - 12)
+		}
 		n, p, alpha, np = ethash.CalcDifficultyBygen(header, parent, parent12)
 	}
 
