@@ -17,6 +17,7 @@
 package ethash
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -57,6 +58,7 @@ var (
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 	errInvalidMixDigest  = errors.New("invalid mix digest")
 	errInvalidPoW        = errors.New("invalid proof-of-work")
+	errInvalidFuzzyHash  = errors.New("invalid errInvalidfuzzyHash")
 )
 
 // Author implements consensus.Engine, returning the header's coinbase as the
@@ -246,6 +248,26 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainReader, header, parent *
 		return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, expected)
 	}
 
+	next := new(big.Int).Add(parent.Number, big1)
+	if chain.Config().IsRiverfork(next) {
+
+		if chain.Config().RiverBlock.Cmp(header.Number) == 0 {
+			np := big.NewInt(1)
+			big10000 := big.NewInt(10000)
+			np.Mul(parent.NP, big10000)
+			// fmt.Println("verify header ", "np ", np, " headernp:", header.NP)
+			if header.NP.Cmp(np) != 0 {
+				return fmt.Errorf("invalid np: have %v, want %v", header.NP, np)
+			}
+		} else {
+			n3p6 := header.N * header.N * header.N * header.P * header.P * header.P * header.P * header.P * header.P
+			_n3p6 := big.NewInt(int64(n3p6))
+			_n3p6.Sub(_n3p6, header.Alpha)
+			if header.NP.Cmp(_n3p6.Add(parent.NP, _n3p6)) != 0 {
+				return fmt.Errorf("invalid nps: have %v, want %v", header.NP, _n3p6)
+			}
+		}
+	}
 	// Verify that the gas limit is <= 2^63-1
 	cap := uint64(0x7fffffffffffffff)
 	if header.GasLimit > cap {
@@ -270,8 +292,10 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainReader, header, parent *
 	if diff := new(big.Int).Sub(header.Number, parent.Number); diff.Cmp(big.NewInt(1)) != 0 {
 		return consensus.ErrInvalidNumber
 	}
+
 	// Verify the engine specific seal securing the block
 	if seal {
+
 		if err := ethash.VerifySeal(chain, header); err != nil {
 			return err
 		}
@@ -515,6 +539,129 @@ func (ethash *Ethash) VerifyDifficultyBySea(header *types.Header) (uint64, uint6
 	timespan = header.Alpha.Uint64()
 	var n, p uint64
 	n, p = calcnpsea(timespan, header.NN, header.PP)
+	return n, p
+}
+
+func (ethash *Ethash) CalcDifficultyByRiver(header *types.Header, parent *types.Header) (uint64, uint64, *big.Int, *big.Int) {
+
+	curBlockNumber := header.Number.Uint64()
+	curBlockTime := header.Time.Uint64()
+
+	//Calculate the duration of two blocks
+	var timespan uint64 = 10 //default timespan between block
+	parentBlockTime := parent.Time.Uint64()
+	if curBlockNumber == 1 { //The length of the first block is 10
+		timespan = 10
+	} else {
+		timespan = curBlockTime - parentBlockTime
+	}
+
+	if curBlockTime < parentBlockTime {
+		timespan = 10
+	}
+
+	Alpha := new(big.Int) //timespan
+	Alpha.SetUint64(timespan)
+
+	//Calculate n, p
+	var n, p uint64
+
+	n, p = calcnpriver(timespan, parent.N, parent.P)
+
+	//Calculate the difficulty of the current block
+	curNP := new(big.Int) //Total difficulty of the current block
+	curNP.SetUint64(n*n*n*p*p*p*p*p*p - timespan)
+	//Calculate the total difficulty
+	NP := new(big.Int) //Total difficulty
+	if curBlockNumber < 1 {
+		NP.SetUint64(0)
+	} else {
+		NP.Set(parent.NP)
+	}
+
+	NP.Add(NP, curNP)
+
+	return n, p, Alpha, NP
+}
+func calcnpriver(timespan uint64, n uint64, p uint64) (uint64, uint64) {
+	if p < 256 {
+		if timespan >= 900 {
+			n = n - n/5
+			p = p - p/5
+		} else if timespan >= 600 {
+			n = n - n/7
+			p = p - p/7
+		} else if timespan >= 300 {
+			n = n - n/10
+			p = p - p/10
+		} else if timespan >= 60 {
+			p = p - 2
+			n = n - 2
+		} else if timespan >= 20 {
+			n = n - 1
+			p = p - 1
+		} else if timespan > 15 {
+			p = p - 1
+			if p < params.P {
+				n = n - 1
+			}
+		} else if timespan > 13 {
+			n = n - 1
+			if n < params.N {
+				p = p - 1
+			}
+		} else if timespan <= 1 {
+			n = n + 2
+			p = p + 2
+		} else if timespan < 5 {
+			p = p + 1
+			if p >= 36 && n < 120 {
+				n = n + 1
+			} else if p >= 27 && n < 60 {
+				n = n + 1
+			}
+		} else if timespan < 7 {
+			n = n + 1
+			if n >= 120 && p < 36 {
+				p = p + 1
+			} else if n >= 60 && p < 27 {
+				p = p + 1
+			}
+		}
+
+	} else {
+		if timespan < 5 {
+			n = n + 1
+		} else if timespan > 16 {
+			if n > params.N {
+				n = n - 1
+			}
+		}
+
+		if n <= params.N && p > params.P && timespan > 30 {
+			p = p - 1
+		}
+	}
+
+	if n <= params.N {
+		n = params.N
+	}
+
+	if p <= params.P {
+		p = params.P
+	}
+
+	if p > 256 {
+		p = 256
+	}
+	return n, p
+}
+func (ethash *Ethash) VerifyDifficultyByRiver(header *types.Header) (uint64, uint64) {
+
+	var timespan uint64
+	timespan = header.Alpha.Uint64()
+	var n, p uint64
+	n, p = calcnpriver(timespan, header.NN, header.PP)
 	//swpu
 	//fmt.Println("verfiy Diffculty  BlockNumer Fork:", header.Number, "calcnpsea  ")
 
@@ -700,26 +847,35 @@ func (ethash *Ethash) VerifySeal(chain consensus.ChainReader, header *types.Head
 	nonce := header.Nonce.Uint64()
 
 	fhash, _, hash256 := genHash(hash, nonce, hash, header.P, header.N)
+
 	fhashstring := common.BytesToHash(fhash).String()
 
 	//verify fash
 	if header.FuzzyHash.String() != fhashstring {
-		return errInvalidMixDigest
+		return errInvalidFuzzyHash
 	}
 	//verify hash nonce
 
 	P := int(header.P)
-	if !compareDiff(hash256, P) {
+	next := new(big.Int).Set(header.Number)
+	if chain.Config().IsRiverfork(next) {
+		//swpu
+		if hex.EncodeToString(hash256) != hex.EncodeToString(header.MixDigest.Bytes()) {
+			return errInvalidMixDigest
+		}
+		if !compareDiff(header.MixDigest.Bytes(), P) {
+			return errInvalidMixDigest
+		}
+	} else if !compareDiff(hash256, P) {
 		return errInvalidMixDigest
 	}
-	//verify n,p is ok
-	var n, p uint64
 
-	next := new(big.Int).Set(header.Number)
-	if chain.Config().IsSeafork(next) {
-		n, p = ethash.VerifyDifficultyBySea(header)
+	var n, p uint64
+	if chain.Config().IsRiverfork(next) {
+		n, p = ethash.VerifyDifficultyByRiver(header)
 	} else {
 		n, p = ethash.VerifyDifficultyBygen(header)
+		//fmt.Println("VerifySeal not fork:", "number:", header.Number, "  n:", n, " p: ", p)
 	}
 
 	if header.N != n || header.P != p {
@@ -732,6 +888,7 @@ func (ethash *Ethash) VerifySeal(chain consensus.ChainReader, header *types.Head
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the ethash protocol. The changes are done inline.
 func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header) error {
+
 	parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
@@ -745,12 +902,22 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 		n     uint64
 		p     uint64
 		alpha *big.Int
-		np    *big.Int
+		np    *big.Int = big.NewInt(0)
 	)
 
 	next := new(big.Int).Add(parent.Number, big1)
-	if chain.Config().IsSeafork(next) {
-		n, p, alpha, np = ethash.CalcDifficultyBySea(header, parent)
+	if chain.Config().IsRiverfork(next) {
+		if chain.Config().RiverBlock.Cmp(header.Number) == 0 {
+			n, p, alpha, _ = ethash.CalcDifficultyByRiver(header, parent)
+			// fmt.Println("np", header.NP)
+			big10000 := big.NewInt(10000)
+			np.Mul(parent.NP, big10000)
+			// fmt.Println("npadd", np)
+			// fmt.Println("headnumber", header.Number, " n:", n, " p: ", p, " alpha:", alpha)
+		} else {
+			n, p, alpha, np = ethash.CalcDifficultyByRiver(header, parent)
+			// fmt.Println("headnumber", header.Number, " n:", n, " p: ", p, " alpha:", alpha)
+		}
 	} else {
 		var parent12 *types.Header
 		if header.Number.Uint64() >= 13 {
@@ -759,6 +926,7 @@ func (ethash *Ethash) Prepare(chain consensus.ChainReader, header *types.Header)
 		n, p, alpha, np = ethash.CalcDifficultyBygen(header, parent, parent12)
 	}
 
+	//	fmt.Println("prepare :", header.Number, " n: ", n, " p:", p, " alpha:", alpha)
 	header.N = n
 	header.NN = parent.N
 	header.P = p
