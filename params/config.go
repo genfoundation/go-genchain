@@ -29,11 +29,13 @@ var (
 )
 
 var (
+	// _ValleyBlock *big.Int = big.NewInt(1000000)
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
 		ChainId:             big.NewInt(1),
-		SeaBlock:            big.NewInt(166000), //swpu
-		RiverBlock:          big.NewInt(166000), //swpu
+		SeaBlock:            big.NewInt(166000),  //swpu
+		RiverBlock:          big.NewInt(166000),  //swpu
+		ValleyBlock:         big.NewInt(1100000), //sjj,
 		HomesteadBlock:      big.NewInt(1150000),
 		DAOForkBlock:        big.NewInt(1920000),
 		DAOForkSupport:      true,
@@ -84,16 +86,30 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
+	AllEthashProtocolChanges = &ChainConfig{
+		big.NewInt(1337),
+		big.NewInt(0),
+		big.NewInt(0),
+		big.NewInt(0),
+		big.NewInt(0),
+		nil, false,
+		big.NewInt(0),
+		common.Hash{},
+		big.NewInt(0),
+		big.NewInt(0),
+		big.NewInt(0),
+		nil,
+		new(EthashConfig),
+		nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Genchain core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, new(EthashConfig), nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int))
 )
 
@@ -107,6 +123,7 @@ type ChainConfig struct {
 
 	SeaBlock       *big.Int `json:"seaBlock,omitempty"`
 	RiverBlock     *big.Int `json:"riverBlock,omitempty"`
+	ValleyBlock    *big.Int `json:"valleyBlock,omitempty"`
 	HomesteadBlock *big.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
 
 	DAOForkBlock   *big.Int `json:"daoForkBlock,omitempty"`   // TheDAO hard-fork switch block (nil = no fork)
@@ -146,6 +163,10 @@ func (c *CliqueConfig) String() string {
 	return "clique"
 }
 
+// func (c *ChainConfig) GetValleyBlock() *big.Int {
+// 	return _ValleyBlock
+// }
+
 // String implements the fmt.Stringer interface.
 func (c *ChainConfig) String() string {
 	var engine interface{}
@@ -157,10 +178,10 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Seafork: %v RiverBlock: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v RiverBlock: %v ValleyBlock: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Engine: %v}",
 		c.ChainId,
-		c.SeaBlock,
 		c.RiverBlock,
+		c.ValleyBlock,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
 		c.DAOForkSupport,
@@ -184,6 +205,10 @@ func (c *ChainConfig) IsSeafork(num *big.Int) bool {
 
 func (c *ChainConfig) IsRiverfork(num *big.Int) bool {
 	return isForked(c.RiverBlock, num)
+}
+
+func (c *ChainConfig) IsValleyfork(num *big.Int) bool {
+	return isForked(c.ValleyBlock, num)
 }
 
 // IsDAO returns whether num is either equal to the DAO fork block or greater.
@@ -255,6 +280,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	}
 	if isForkIncompatible(c.RiverBlock, newcfg.RiverBlock, head) {
 		return newCompatError("River fork block", c.RiverBlock, newcfg.RiverBlock)
+	}
+	if isForkIncompatible(c.ValleyBlock, newcfg.ValleyBlock, head) {
+		return newCompatError("Valley fork block", c.ValleyBlock, newcfg.ValleyBlock)
 	}
 	if isForkIncompatible(c.DAOForkBlock, newcfg.DAOForkBlock, head) {
 		return newCompatError("DAO fork block", c.DAOForkBlock, newcfg.DAOForkBlock)
@@ -345,7 +373,7 @@ func (err *ConfigCompatError) Error() string {
 // phases.
 type Rules struct {
 	ChainId                                   *big.Int
-	IsSeafork, IsRiverfork                    bool
+	IsSeafork, IsRiverfork, IsValleyfork      bool
 	IsHomestead, IsEIP150, IsEIP155, IsEIP158 bool
 	IsByzantium                               bool
 }
@@ -355,5 +383,5 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 	if chainId == nil {
 		chainId = new(big.Int)
 	}
-	return Rules{ChainId: new(big.Int).Set(chainId), IsSeafork: c.IsSeafork(num), IsRiverfork: c.IsRiverfork(num), IsHomestead: c.IsHomestead(num), IsEIP150: c.IsEIP150(num), IsEIP155: c.IsEIP155(num), IsEIP158: c.IsEIP158(num), IsByzantium: c.IsByzantium(num)}
+	return Rules{ChainId: new(big.Int).Set(chainId), IsSeafork: c.IsSeafork(num), IsRiverfork: c.IsRiverfork(num), IsValleyfork: c.IsValleyfork(num), IsHomestead: c.IsHomestead(num), IsEIP150: c.IsEIP150(num), IsEIP155: c.IsEIP155(num), IsEIP158: c.IsEIP158(num), IsByzantium: c.IsByzantium(num)}
 }
